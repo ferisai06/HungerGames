@@ -3,11 +3,11 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Liga de 40 Equipos — 200/0/100</title>
+  <title>Liga de 40 Equipos — Realtime (Firebase)</title>
   <style>
     :root { --bg:#0f172a; --card:#111827; --muted:#94a3b8; --text:#e5e7eb; --accent:#22c55e; --danger:#ef4444; --ring:#38bdf8; }
     *{box-sizing:border-box}
-    body { margin:0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, "Helvetica Neue", Arial, "Apple Color Emoji", "Segoe UI Emoji"; background:linear-gradient(120deg,#0b1023,#0f172a 30%,#0b132f); color:var(--text); }
+    body { margin:0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, "Helvetica Neue", Arial; background:linear-gradient(120deg,#0b1023,#0f172a 30%,#0b132f); color:var(--text); }
     header{position:sticky;top:0;z-index:5;background:rgba(17,24,39,.8);backdrop-filter:blur(8px);border-bottom:1px solid #1f2937}
     .wrap{max-width:1100px;margin:0 auto;padding:18px}
     h1{margin:0;font-size:1.4rem;display:flex;gap:12px;align-items:center}
@@ -18,7 +18,7 @@
     .card h2{margin:0 0 6px 0;font-size:1.05rem}
     .card .body{padding:16px}
     .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
-    select, input[type="text"], input[type="password"]{background:#0b1220;border:1px solid #1f2937;color:var(--text);padding:10px 12px;border-radius:10px;outline:none}
+    select, input[type="text"], input[type="password"], input[type="email"]{background:#0b1220;border:1px solid #1f2937;color:var(--text);padding:10px 12px;border-radius:10px;outline:none}
     select:focus, input:focus{border-color:var(--ring);box-shadow:0 0 0 3px rgba(56,189,248,.15)}
     button{border:0;background:#334155;color:var(--text);padding:10px 14px;border-radius:10px;cursor:pointer;transition:.15s}
     button:hover{filter:brightness(1.1)}
@@ -47,9 +47,9 @@
 <body>
   <header>
     <div class="wrap row" style="justify-content:space-between">
-      <h1>⚽ Liga de 40 Equipos <span class="pill">200 / 0 / 100</span></h1>
+      <h1>⚽ Liga de 40 Equipos <span class="pill">Realtime 200 / 0 / 100</span></h1>
       <div class="row">
-        <span id="adminState" class="tag">Modo visitante</span>
+        <span id="adminState" class="tag">Visitante</span>
         <button id="toggleAdmin" class="ghost">Entrar como admin</button>
       </div>
     </div>
@@ -60,14 +60,14 @@
     <section class="card">
       <div class="body">
         <h2>Registrar resultado</h2>
-        <p class="muted small">Selecciona dos equipos diferentes. Como <strong>admin</strong> podrás marcar ganador o empate y se sumarán puntos automáticamente.</p>
+        <p class="muted small">Selecciona dos equipos distintos. Solo los <strong>admins autenticados</strong> pueden registrar resultados; todos ven los cambios en tiempo real.</p>
         <div class="grid cols-2" style="margin-top:10px">
           <div class="stack">
-            <label for="teamA" class="muted small">Equipo A</label>
+            <label class="muted small">Equipo A</label>
             <select id="teamA"></select>
           </div>
           <div class="stack">
-            <label for="teamB" class="muted small">Equipo B</label>
+            <label class="muted small">Equipo B</label>
             <select id="teamB"></select>
           </div>
         </div>
@@ -87,10 +87,7 @@
           <h2>Tabla de posiciones</h2>
           <div class="row">
             <button id="renameTeams" class="ghost" title="Renombrar equipos">✏️ Nombres</button>
-            <button id="exportBtn" class="ghost" title="Exportar JSON">⬇️ Exportar</button>
-            <input type="file" id="importFile" accept="application/json" style="display:none" />
-            <button id="importBtn" class="ghost" title="Importar JSON">⬆️ Importar</button>
-            <button id="resetBtn" class="danger" title="Borrar puntos y reiniciar">♻️ Reiniciar</button>
+            <button id="resetBtn" class="danger" title="Borrar puntos e historial">♻️ Reiniciar</button>
           </div>
         </div>
         <table id="table">
@@ -112,62 +109,56 @@
     </section>
   </main>
 
-  <script>
-    // ==== Utilidades de almacenamiento ====
-    const KEY = 'liga40_v1';
+  <!-- Firebase v10 modules -->
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+    import { getDatabase, ref, set, get, onValue } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
+    import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
+
+    // TODO: Rellena con tu configuración de Firebase
+    const firebaseConfig = {
+      apiKey: "TU_API_KEY",
+      authDomain: "TU_PROYECTO.firebaseapp.com",
+      databaseURL: "https://TU_PROYECTO-default-rtdb.firebaseio.com",
+      projectId: "TU_PROYECTO",
+      storageBucket: "TU_PROYECTO.appspot.com",
+      messagingSenderId: "",
+      appId: ""
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const db = getDatabase(app);
+    const auth = getAuth(app);
+
+    // ====== Estado y defaults ======
     const defaultTeams = Array.from({length:40}, (_,i)=>({
       id: i+1,
       name: `Equipo ${i+1}`,
-      points: 0,
-      played: 0,
-      win: 0,
-      draw: 0,
-      loss: 0
+      points: 0, played: 0, win: 0, draw: 0, loss: 0
     }));
 
-    function loadState(){
-      try{
-        const raw = localStorage.getItem(KEY);
-        if(!raw) return { teams: defaultTeams, history: [] };
-        const data = JSON.parse(raw);
-        // migrate if needed
-        if(!data.history) data.history = [];
-        // Ensure 40 entries
-        if(!data.teams || data.teams.length !== 40){
-          const map = new Map((data.teams||[]).map(t=>[t.id,t]));
-          const merged = defaultTeams.map(dt=> ({...dt, ...(map.get(dt.id)||{}) }));
-          data.teams = merged;
-        }
-        return data;
-      }catch(e){
-        console.warn('Estado corrupto, reiniciando', e);
-        return { teams: defaultTeams, history: [] };
-      }
-    }
-    function saveState(){ localStorage.setItem(KEY, JSON.stringify(state)); }
+    let state = { teams: defaultTeams, history: [] };
 
-    let state = loadState();
-
-    // ==== Admin simple (PIN) ====
-    let isAdmin = false;
-    const ADMIN_PIN = 'admin123'; // cámbialo si quieres
-
+    // ====== Elementos ======
     const $ = (s)=>document.querySelector(s);
     const teamA = $('#teamA');
     const teamB = $('#teamB');
     const tbody = document.querySelector('#table tbody');
     const historyBox = $('#history');
+    const btnAWin = $('#btnAWin');
+    const btnBWin = $('#btnBWin');
+    const btnDraw = $('#btnDraw');
 
+    // ====== Render ======
     function renderSelects(){
-      const makeOpts = (selId)=>{
-        const sel = selId;
+      const fill = (sel)=>{
         sel.innerHTML = '';
         state.teams.forEach(t=>{
           const o = document.createElement('option');
           o.value = t.id; o.textContent = t.name; sel.appendChild(o);
         });
       };
-      makeOpts(teamA); makeOpts(teamB);
+      fill(teamA); fill(teamB);
       teamA.selectedIndex = 0; teamB.selectedIndex = 1;
     }
 
@@ -191,23 +182,47 @@
     function renderHistory(){
       if(!state.history.length){ historyBox.innerHTML = '<span class="muted small">Sin resultados aún.</span>'; return; }
       historyBox.innerHTML = state.history.slice().reverse().map(h=>{
-        const a = state.teams.find(t=>t.id===h.a).name;
-        const b = state.teams.find(t=>t.id===h.b).name;
+        const a = state.teams.find(t=>t.id===h.a)?.name || `#${h.a}`;
+        const b = state.teams.find(t=>t.id===h.b)?.name || `#${h.b}`;
         const tag = h.type==='A' ? `Ganó ${a}` : h.type==='B' ? `Ganó ${b}` : 'Empate';
         const when = new Date(h.ts).toLocaleString();
         return `<div class="small">• ${when}: <strong>${a}</strong> vs <strong>${b}</strong> — <span class="muted">${tag}</span></div>`;
       }).join('');
     }
 
-    function validateDifferent(){
-      const a = parseInt(teamA.value,10);
-      const b = parseInt(teamB.value,10);
-      const ok = a !== b;
-      [btnAWin, btnBWin, btnDraw].forEach(btn=>{
-        btn.disabled = !(ok && isAdmin);
+    // ====== Firebase helpers ======
+    const DB_PATH = 'liga40';
+    const dbRef = ref(db, DB_PATH);
+
+    async function loadFromDB(){
+      const snap = await get(dbRef);
+      if(snap.exists()){
+        state = snap.val();
+      }else{
+        state = { teams: defaultTeams, history: [] };
+        await set(dbRef, state);
+      }
+      renderSelects(); renderTable(); renderHistory();
+    }
+
+    function subscribeRealtime(){
+      onValue(dbRef, (snap)=>{
+        const data = snap.val();
+        if(data){
+          state = data;
+          renderSelects();
+          renderTable();
+          renderHistory();
+          validateDifferent();
+        }
       });
     }
 
+    async function saveToDB(){
+      await set(dbRef, state);
+    }
+
+    // ====== Lógica de resultados ======
     function applyResult(type){
       const aId = parseInt(teamA.value,10);
       const bId = parseInt(teamB.value,10);
@@ -215,112 +230,91 @@
       const A = state.teams.find(t=>t.id===aId);
       const B = state.teams.find(t=>t.id===bId);
 
-      // actualizar PJ
       A.played++; B.played++;
-      if(type==='A'){
-        A.points += 200; A.win++; B.loss++;
-      } else if(type==='B'){
-        B.points += 200; B.win++; A.loss++;
-      } else { // draw
-        A.points += 100; B.points += 100; A.draw++; B.draw++;
-      }
+      if(type==='A'){ A.points += 200; A.win++; B.loss++; }
+      else if(type==='B'){ B.points += 200; B.win++; A.loss++; }
+      else { A.points += 100; B.points += 100; A.draw++; B.draw++; }
+
       state.history.push({ a:aId, b:bId, type, ts: Date.now() });
-      saveState();
-      renderTable();
-      renderHistory();
+      saveToDB();
     }
 
-    // ==== Eventos ====
-    const btnAWin = $('#btnAWin');
-    const btnBWin = $('#btnBWin');
-    const btnDraw = $('#btnDraw');
-
-    btnAWin.addEventListener('click', ()=>applyResult('A'));
-    btnBWin.addEventListener('click', ()=>applyResult('B'));
-    btnDraw.addEventListener('click', ()=>applyResult('D'));
-
-    teamA.addEventListener('change', validateDifferent);
-    teamB.addEventListener('change', validateDifferent);
-
-    $('#toggleAdmin').addEventListener('click', ()=>{
-      if(isAdmin){ isAdmin=false; updateAdminUI(); return; }
-      const pin = prompt('PIN de administrador:');
-      if(pin===ADMIN_PIN){ isAdmin=true; updateAdminUI(); }
-      else alert('PIN incorrecto');
-    });
+    // ====== Admin & auth ======
+    let isAdmin = false;
 
     function updateAdminUI(){
-      $('#adminState').textContent = isAdmin ? 'Admin activo' : 'Modo visitante';
+      $('#adminState').textContent = isAdmin ? 'Admin activo' : 'Visitante';
       $('#adminState').className = isAdmin ? 'admin-badge' : 'tag';
       validateDifferent();
     }
 
-    // Renombrar equipos (individual, clic en nombre)
+    $('#toggleAdmin').addEventListener('click', async ()=>{
+      if(isAdmin){ await signOut(auth); return; }
+      const email = prompt('Correo admin (Firebase Auth):');
+      const pass = prompt('Contraseña:');
+      if(!email || !pass) return;
+      try{
+        await signInWithEmailAndPassword(auth, email, pass);
+      }catch(e){ alert('No se pudo iniciar sesión: '+ e.message); }
+    });
+
+    onAuthStateChanged(auth, (user)=>{
+      isAdmin = !!user; // Si está logueado, es admin
+      updateAdminUI();
+    });
+
+    // ====== UI events ======
+    function validateDifferent(){
+      const a = parseInt(teamA.value,10);
+      const b = parseInt(teamB.value,10);
+      const ok = a !== b;
+      [btnAWin, btnBWin, btnDraw].forEach(btn=> btn.disabled = !(ok && isAdmin));
+    }
+
+    btnAWin.addEventListener('click', ()=>applyResult('A'));
+    btnBWin.addEventListener('click', ()=>applyResult('B'));
+    btnDraw.addEventListener('click', ()=>applyResult('D'));
+    teamA.addEventListener('change', validateDifferent);
+    teamB.addEventListener('change', validateDifferent);
+
+    // Renombrar equipos (clic en nombre)
     tbody.addEventListener('click', (e)=>{
       const btn = e.target.closest('.name-btn');
       if(!btn) return;
+      if(!isAdmin) return alert('Solo admin puede renombrar');
       const id = parseInt(btn.dataset.id,10);
       const t = state.teams.find(x=>x.id===id);
-      const name = prompt('Nuevo nombre para el equipo:', t.name);
+      const name = prompt('Nuevo nombre del equipo:', t.name);
       if(!name) return;
       t.name = name.trim().slice(0,40) || t.name;
-      saveState();
-      renderTable();
-      renderSelects();
+      saveToDB();
     });
 
-    // Botón renombrar en masa (lista)
+    // Renombrar en masa
     $('#renameTeams').addEventListener('click', ()=>{
-      const list = state.teams.map(t=>t.name).join('\n');
-      const msg = 'Edita los nombres, uno por línea (40 líneas):';
-      const edited = prompt(msg, list);
+      if(!isAdmin) return alert('Solo admin');
+      const list = state.teams.map(t=>t.name).join('
+');
+      const edited = prompt('Edita los nombres (40 líneas):', list);
       if(!edited) return;
-      const names = edited.split('\n').map(s=>s.trim()).filter((_,i)=> i < 40);
-      if(names.length!==40){
-        alert('Debes proporcionar exactamente 40 líneas. No se hicieron cambios.');
-        return;
-      }
+      const names = edited.split('
+').map(s=>s.trim());
+      if(names.length!==40){ alert('Deben ser 40 líneas'); return; }
       state.teams.forEach((t,i)=> t.name = names[i] || t.name);
-      saveState();
-      renderTable();
-      renderSelects();
-    });
-
-    // Exportar / Importar JSON
-    $('#exportBtn').addEventListener('click', ()=>{
-      const blob = new Blob([JSON.stringify(state,null,2)], {type:'application/json'});
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url; a.download = 'liga40_estado.json'; a.click();
-      URL.revokeObjectURL(url);
-    });
-    $('#importBtn').addEventListener('click', ()=> $('#importFile').click());
-    $('#importFile').addEventListener('change', (ev)=>{
-      const file = ev.target.files[0]; if(!file) return;
-      const reader = new FileReader();
-      reader.onload = ()=>{
-        try{
-          const data = JSON.parse(reader.result);
-          if(!data.teams || !Array.isArray(data.teams) || data.teams.length!==40) throw new Error('Formato inválido');
-          state = { teams: data.teams, history: Array.isArray(data.history) ? data.history : [] };
-          saveState(); renderTable(); renderSelects(); renderHistory();
-        }catch(err){ alert('Archivo no válido: ' + err.message); }
-      };
-      reader.readAsText(file);
+      saveToDB();
     });
 
     // Reiniciar
     $('#resetBtn').addEventListener('click', ()=>{
-      if(!confirm('¿Seguro que quieres reiniciar todos los puntos e historial?')) return;
+      if(!isAdmin) return alert('Solo admin');
+      if(!confirm('¿Seguro que quieres reiniciar?')) return;
       state = { teams: defaultTeams.map(t=>({...t})), history: [] };
-      saveState(); renderTable(); renderSelects(); renderHistory();
+      saveToDB();
     });
 
-    // Init
-    renderSelects();
-    renderTable();
-    renderHistory();
-    updateAdminUI();
+    // ====== Init ======
+    await loadFromDB();
+    subscribeRealtime();
     validateDifferent();
   </script>
 </body>
